@@ -1,0 +1,11 @@
+age,gender,education,job_title,years_experience,marital_status,children,monthly_income
+20,Female,Bachelor,Student,2,Single,0,500
+20,Male,High School,Unemployed,15,Single,0,20000
+19,Female,PhD,Researcher,1,Single,0,3000
+45,Male,Primary School,Doctor,20,Married,3,15000
+32,Female,Master,Engineer,10,Married,2,8000
+17,Male,High School,None,5,Single,1,0
+60,Female,Bachelor,Retired,35,Married,4,3000
+25,Other,Primary School,CEO,1,Single,0,40000
+38,Male,PhD,Data Scientist,15,Married,2,12000
+22,Female,Bachelor,Intern,1,Single,0,50000
