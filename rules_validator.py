@@ -1,8 +1,8 @@
 from __future__ import annotations
 
-from typing import List
+from typing import Dict, List, Any
 
-from config import get_settings
+from config import get_settings, get_thresholds_for_survey_type
 from models import Issue, IssueSource, Severity, SurveyResponse
 
 
@@ -12,15 +12,20 @@ class RuleBasedValidator:
     def __init__(self) -> None:
         self.settings = get_settings()
 
-    def validate(self, response: SurveyResponse) -> List[Issue]:
+    def validate(
+        self,
+        response: SurveyResponse,
+        survey_type: str | None = None,
+    ) -> List[Issue]:
         issues: List[Issue] = []
+        thresholds: Dict[str, Any] = get_thresholds_for_survey_type(survey_type)
 
-        self._check_age_range(response, issues)
+        self._check_age_range(response, issues, thresholds)
         self._check_experience_vs_age(response, issues)
         self._check_children_vs_age_and_marital_status(response, issues)
-        self._check_income_vs_employment(response, issues)
-        self._check_income_reasonableness(response, issues)
-        self._check_saudi_context_specific(response, issues)
+        self._check_income_vs_employment(response, issues, thresholds)
+        self._check_income_reasonableness(response, issues, thresholds)
+        self._check_saudi_context_specific(response, issues, thresholds)
 
         return issues
 
@@ -40,17 +45,24 @@ class RuleBasedValidator:
             )
         )
 
-    def _check_age_range(self, response: SurveyResponse, issues: List[Issue]) -> None:
+    def _check_age_range(
+        self,
+        response: SurveyResponse,
+        issues: List[Issue],
+        thresholds: Dict[str, Any],
+    ) -> None:
         if response.age is None:
             return
-        if response.age < self.settings.min_age:
+        min_age = thresholds.get("min_age", self.settings.min_age)
+        max_age = thresholds.get("max_age", self.settings.max_age)
+        if response.age < min_age:
             self._add_issue(
                 issues,
                 "age",
-                f"Age {response.age} is below the expected minimum of {self.settings.min_age} for this survey.",
+                f"Age {response.age} is below the expected minimum of {min_age} for this survey.",
                 Severity.medium,
             )
-        if response.age > self.settings.max_age:
+        if response.age > max_age:
             self._add_issue(
                 issues,
                 "age",
@@ -95,7 +107,10 @@ class RuleBasedValidator:
                 )
 
     def _check_income_vs_employment(
-        self, response: SurveyResponse, issues: List[Issue]
+        self,
+        response: SurveyResponse,
+        issues: List[Issue],
+        thresholds: Dict[str, Any],
     ) -> None:
         if response.job_title is None or response.monthly_income is None:
             return
@@ -103,9 +118,15 @@ class RuleBasedValidator:
         title = response.job_title.lower()
         unemployed_keywords = ["unemployed", "no job", "jobless"]
         low_income_roles = ["student", "intern"]
+        unemployed_threshold = thresholds.get(
+            "unemployed_income_threshold", self.settings.unemployed_income_threshold
+        )
+        max_income = thresholds.get(
+            "max_reasonable_income", self.settings.max_reasonable_income
+        )
 
         if any(k in title for k in unemployed_keywords):
-            if response.monthly_income > self.settings.unemployed_income_threshold:
+            if response.monthly_income > unemployed_threshold:
                 self._add_issue(
                     issues,
                     "monthly_income",
@@ -115,7 +136,7 @@ class RuleBasedValidator:
 
         if any(k in title for k in low_income_roles):
             if response.monthly_income is not None and response.monthly_income > (
-                self.settings.max_reasonable_income * 0.5
+                max_income * 0.5
             ):
                 self._add_issue(
                     issues,
@@ -125,10 +146,16 @@ class RuleBasedValidator:
                 )
 
     def _check_income_reasonableness(
-        self, response: SurveyResponse, issues: List[Issue]
+        self,
+        response: SurveyResponse,
+        issues: List[Issue],
+        thresholds: Dict[str, Any],
     ) -> None:
         if response.monthly_income is None:
             return
+        max_income = thresholds.get(
+            "max_reasonable_income", self.settings.max_reasonable_income
+        )
         if response.monthly_income < 0:
             self._add_issue(
                 issues,
@@ -136,7 +163,7 @@ class RuleBasedValidator:
                 "Monthly income cannot be negative.",
                 Severity.high,
             )
-        if response.monthly_income > self.settings.max_reasonable_income:
+        if response.monthly_income > max_income:
             self._add_issue(
                 issues,
                 "monthly_income",
@@ -145,7 +172,10 @@ class RuleBasedValidator:
             )
 
     def _check_saudi_context_specific(
-        self, response: SurveyResponse, issues: List[Issue]
+        self,
+        response: SurveyResponse,
+        issues: List[Issue],
+        thresholds: Dict[str, Any],
     ) -> None:
         """Heuristics tailored for the Saudi labour market / context.
 
@@ -156,6 +186,9 @@ class RuleBasedValidator:
 
         title = response.job_title.strip().lower()
         income = response.monthly_income
+        max_income = thresholds.get(
+            "max_reasonable_income", self.settings.max_reasonable_income
+        )
 
         # Saudi-specific low income roles where very high income is suspicious
         sa_low_income_roles = [

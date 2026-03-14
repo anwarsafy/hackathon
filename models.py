@@ -73,3 +73,41 @@ class ValidationResult(BaseModel):
     rule_summary: Optional[str] = None
     llm_summary: Optional[str] = None
 
+
+# --- Survey schema & request wrappers (question-aware, NL input) ---
+
+
+class SurveyQuestion(BaseModel):
+    id: str
+    field: str
+    label: str
+    question_text: Optional[str] = None
+    value_type: Optional[str] = None  # e.g. "number", "text", "choice"
+
+
+class SurveySchema(BaseModel):
+    survey_type: str
+    name: str
+    questions: List[SurveyQuestion] = Field(default_factory=list)
+
+
+class ValidateRequest(BaseModel):
+    """Richer validation request: response + optional survey type and question text."""
+    response: SurveyResponse
+    survey_type: Optional[str] = None
+    question_text: Optional[Dict[str, str]] = None  # field name -> question text
+
+
+class ValidateFromTextRequest(BaseModel):
+    """Request to validate from natural language input."""
+    text: str
+    survey_type: Optional[str] = None
+    language_hint: Optional[str] = None
+
+
+class ValidateFromTextResponse(BaseModel):
+    """Response for validate-from-text: extracted response + validation + parsing issues."""
+    extracted: SurveyResponse
+    validation: ValidationResult
+    parsing_issues: List[str] = Field(default_factory=list)
+

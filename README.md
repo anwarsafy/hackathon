@@ -18,6 +18,8 @@
 - [Configuration](#configuration)
 - [Running Locally](#running-locally)
 - [API Reference (Server)](#api-reference-server)
+- [Survey types and question-aware validation](#survey-types-and-question-aware-validation)
+- [Natural language input](#natural-language-input)
 - [Data Models](#data-models)
 - [Validation Logic](#validation-logic)
 - [Deployment](#deployment)
@@ -81,15 +83,18 @@ It is built for researchers and data teams who need to ensure survey data qualit
 
 | File or folder            | Purpose |
 |---------------------------|--------|
-| `main.py`                 | FastAPI app, CORS, routes: `/health`, `/validate`, `/batch-validate`. |
+| `main.py`                 | FastAPI app, CORS, routes: `/health`, `/validate`, `/batch-validate`, `/validate-from-text`, `/survey-types`. |
 | `validator_service.py`    | Hybrid validation: merges rule + LLM issues, computes score and status. |
-| `rules_validator.py`      | Rule-based validation (age, experience, children, income, Saudi context). |
-| `llm_validator.py`        | LLM integration (OpenAI Chat Completions), prompt and JSON parsing. |
-| `models.py`               | Pydantic models: `SurveyResponse`, `Issue`, `ValidationResult`, enums. |
-| `config.py`               | Settings (OpenAI, rule thresholds) via env and `.env`. |
+| `rules_validator.py`      | Rule-based validation (age, experience, children, income, Saudi context); supports survey_type thresholds. |
+| `llm_validator.py`        | LLM integration (OpenAI Chat Completions), prompt and JSON parsing; optional question_text in prompt. |
+| `nl_extractor.py`         | Extract structured SurveyResponse from natural language text (LLM). |
+| `survey_schemas.py`       | Load survey schemas (question bank) from `data/survey_schemas.json`; list_survey_types, get_schema. |
+| `models.py`               | Pydantic models: `SurveyResponse`, `Issue`, `ValidationResult`, `SurveySchema`, `ValidateRequest`, `ValidateFromTextRequest/Response`, enums. |
+| `config.py`               | Settings (OpenAI, rule thresholds) via env and `.env`; per–survey-type threshold overrides. |
 | `dashboard.py`            | Streamlit dashboard (EN/AR), manual or sample-based input. |
 | `run_examples.py`         | CLI: runs validator on `data/sample_responses.csv`. |
 | `data/sample_responses.csv` | Example survey rows for demo and CLI. |
+| `data/survey_schemas.json`  | Survey type definitions (question bank): labour_market, health, etc. |
 | `requirements.txt`       | Python dependencies. |
 | `Dockerfile`              | Docker image for the FastAPI API (production). |
 | `Dockerfile.dashboard`    | Docker image for the Streamlit dashboard. |
@@ -209,6 +214,20 @@ curl -s http://localhost:8000/health
 
 ---
 
+### Survey types (question bank)
+
+**`GET /survey-types`**
+
+Returns a list of available survey type ids and names (e.g. `labour_market`, `health`).
+
+**Response:** `[{ "survey_type": "labour_market", "name": "Labour Market Survey (Saudi context)" }, ...]`
+
+**`GET /survey-types/{survey_type}`**
+
+Returns the full schema for a survey type: questions with `id`, `field`, `label`, `question_text`, `value_type`. 404 if not found.
+
+---
+
 ### Validate a single response
 
 **`POST /validate`**
@@ -218,7 +237,10 @@ Validates one survey response and returns a confidence score, status, and list o
 **Request**
 
 - **Headers:** `Content-Type: application/json`
-- **Body:** JSON object matching the `SurveyResponse` model. All fields are optional; at least one field is typically provided for meaningful validation.
+- **Body (either shape):**
+  - **Simple (backward compatible):** JSON object matching the `SurveyResponse` model (age, gender, job_title, etc.).
+  - **With context:** `{ "response": { ...SurveyResponse }, "survey_type": "labour_market", "question_text": { "age": "What is your age?", ... } }`. All fields optional except `response`. `survey_type` selects threshold set; `question_text` (field → question text) is passed to the LLM for context-aware validation.
+- All response fields are optional; at least one field is typically provided for meaningful validation.
 
 | Field             | Type   | Required | Description |
 |-------------------|--------|----------|-------------|
@@ -352,10 +374,44 @@ curl -s -X POST http://localhost:8000/batch-validate \
 
 ---
 
+### Validate from natural language
+
+**`POST /validate-from-text`**
+
+Accepts free-text from a respondent, extracts a structured `SurveyResponse` using the LLM, then runs the same validation pipeline. Useful for voice or written answers that are not already structured.
+
+**Request**
+
+- **Headers:** `Content-Type: application/json`
+- **Body:** `{ "text": "I am 30, male, engineer with 5 years experience, married, 2 children, income about 8000 SAR", "survey_type": "labour_market", "language_hint": "en" }`. `survey_type` and `language_hint` are optional.
+
+**Response**
+
+- Status: `200 OK`
+- Body: `{ "extracted": SurveyResponse, "validation": ValidationResult, "parsing_issues": ["Could not determine ...", ...] }`. `parsing_issues` lists any uncertainties or extraction errors.
+
+Requires `OPENAI_API_KEY`; otherwise extraction returns an empty response and a parsing_issue.
+
+---
+
 ### OpenAPI (Swagger) documentation
 
 - **Interactive UI:** `GET /docs` — try all endpoints from the browser.
 - **OpenAPI JSON:** `GET /openapi.json` — machine-readable schema.
+
+---
+
+## Survey types and question-aware validation
+
+- **Survey types** — The system supports multiple survey types (e.g. `labour_market`, `health`) defined in `data/survey_schemas.json`. Each type has a list of questions (field, label, optional question text). Rule thresholds (min/max age, income limits) can differ per type via `config.SURVEY_TYPE_THRESHOLDS`.
+- **Question text** — When calling `POST /validate`, you can send `question_text: { "age": "What is your age in years?", ... }` along with the response. The LLM uses this wording to interpret answers in context and flag inconsistencies more accurately.
+- **Backward compatibility** — Sending a plain `SurveyResponse` (no `response` key, no `survey_type` or `question_text`) behaves as before and uses default thresholds.
+
+---
+
+## Natural language input
+
+- **`POST /validate-from-text`** — Send free-text (e.g. “I am 25, engineer, 3 years experience”) and optional `survey_type` and `language_hint`. The LLM extracts a structured `SurveyResponse`, then the same validation pipeline runs. The response includes `extracted`, `validation`, and `parsing_issues` (e.g. “Could not determine monthly_income”). Requires `OPENAI_API_KEY`.
 
 ---
 
@@ -364,6 +420,9 @@ curl -s -X POST http://localhost:8000/batch-validate \
 - **SurveyResponse** — Input survey record. Fields: `age`, `gender`, `education`, `job_title`, `years_experience`, `marital_status`, `children`, `monthly_income`, `extras`. All optional; validators treat `None` as “not provided”. Pydantic validators enforce non-negative values for `age`, `years_experience`, and `children`.
 - **Issue** — Single finding: `field`, `description`, `severity` (enum: low/medium/high), `source` (rule/llm/system).
 - **ValidationResult** — Output of validation: `confidence_score` (0–100), `status`, `issues[]`, `rule_summary`, `llm_summary`.
+- **SurveyQuestion** / **SurveySchema** — Question bank: `id`, `field`, `label`, `question_text`, `value_type`; schema has `survey_type`, `name`, `questions[]`.
+- **ValidateRequest** — Optional wrapper for `POST /validate`: `response`, `survey_type?`, `question_text?`.
+- **ValidateFromTextRequest** / **ValidateFromTextResponse** — For `POST /validate-from-text`: request has `text`, `survey_type?`, `language_hint?`; response has `extracted`, `validation`, `parsing_issues`.
 - **Severity** — `low`, `medium`, `high`.
 - **IssueSource** — `rule`, `llm`, `system`.
 

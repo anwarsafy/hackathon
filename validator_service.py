@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import List
+from typing import Dict, List, Optional
 
 from models import Issue, IssueSource, Severity, SurveyResponse, ValidationResult
 from rules_validator import RuleBasedValidator
@@ -55,9 +55,16 @@ class HybridValidatorService:
             return "suspicious"
         return "inconsistent"
 
-    def validate(self, response: SurveyResponse) -> ValidationResult:
-        rule_issues = self.rule_validator.validate(response)
-        llm_issues, llm_summary = self.llm_validator.validate(response)
+    def validate(
+        self,
+        response: SurveyResponse,
+        survey_type: Optional[str] = None,
+        question_text: Optional[Dict[str, str]] = None,
+    ) -> ValidationResult:
+        rule_issues = self.rule_validator.validate(response, survey_type=survey_type)
+        llm_issues, llm_summary = self.llm_validator.validate(
+            response, question_text=question_text
+        )
         all_issues = self._merge_issues(rule_issues, llm_issues)
 
         score = self._score_from_issues(all_issues)

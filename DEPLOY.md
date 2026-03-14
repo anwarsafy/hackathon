@@ -2,6 +2,29 @@
 
 ---
 
+## Why you don’t see a dashboard on Render
+
+**Render hosts only the API (FastAPI).** The **dashboard** is a separate Streamlit app. It is not deployed when you deploy the API. To use the dashboard you can:
+
+1. **Run it locally** (see [Run the dashboard locally](#run-the-dashboard-locally) below), or  
+2. **Deploy it to Streamlit Community Cloud** (free) — see [الداشبورد (واجهة Streamlit)](#٢-الداشبورد-واجهة-streamlit--streamlit-cloud-مجاني) below.
+
+---
+
+## Run the dashboard locally
+
+From your project folder:
+
+```bash
+cd hackathon
+source .venv/bin/activate   # or: .venv\Scripts\activate on Windows
+streamlit run dashboard.py
+```
+
+Open the URL shown in the terminal (e.g. `http://localhost:8501`). The dashboard runs validation in-process; it does not need the Render API URL.
+
+---
+
 ## نشر مجاني ١٠٠٪ (Free hosting — تعليمي)
 
 المشروع تعليمي فالأفضل تنشره على خطط **مجانية** بدون بطاقة. أنسب خيارين:

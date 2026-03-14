@@ -1,0 +1,91 @@
+{
+  "labour_market": {
+    "survey_type": "labour_market",
+    "name": "Labour Market Survey (Saudi context)",
+    "questions": [
+      {
+        "id": "q_age",
+        "field": "age",
+        "label": "Age",
+        "question_text": "What is your age in years?",
+        "value_type": "number"
+      },
+      {
+        "id": "q_gender",
+        "field": "gender",
+        "label": "Gender",
+        "question_text": "What is your gender?",
+        "value_type": "text"
+      },
+      {
+        "id": "q_education",
+        "field": "education",
+        "label": "Education",
+        "question_text": "What is your highest level of education?",
+        "value_type": "text"
+      },
+      {
+        "id": "q_job_title",
+        "field": "job_title",
+        "label": "Job title",
+        "question_text": "What is your current job title or occupation?",
+        "value_type": "text"
+      },
+      {
+        "id": "q_years_experience",
+        "field": "years_experience",
+        "label": "Years of experience",
+        "question_text": "How many years of work experience do you have in total?",
+        "value_type": "number"
+      },
+      {
+        "id": "q_marital_status",
+        "field": "marital_status",
+        "label": "Marital status",
+        "question_text": "What is your marital status?",
+        "value_type": "text"
+      },
+      {
+        "id": "q_children",
+        "field": "children",
+        "label": "Number of children",
+        "question_text": "How many children do you have?",
+        "value_type": "number"
+      },
+      {
+        "id": "q_monthly_income",
+        "field": "monthly_income",
+        "label": "Monthly income (SAR)",
+        "question_text": "What is your approximate monthly income in Saudi Riyals (SAR)?",
+        "value_type": "number"
+      }
+    ]
+  },
+  "health": {
+    "survey_type": "health",
+    "name": "Health Survey (example)",
+    "questions": [
+      {
+        "id": "q_age",
+        "field": "age",
+        "label": "Age",
+        "question_text": "What is your age in years?",
+        "value_type": "number"
+      },
+      {
+        "id": "q_gender",
+        "field": "gender",
+        "label": "Gender",
+        "question_text": "What is your gender?",
+        "value_type": "text"
+      },
+      {
+        "id": "q_health_status",
+        "field": "extras",
+        "label": "Health status",
+        "question_text": "How would you describe your general health?",
+        "value_type": "text"
+      }
+    ]
+  }
+}

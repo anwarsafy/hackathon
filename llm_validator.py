@@ -67,8 +67,20 @@ class LLMSemanticValidator:
             )
         self.model = settings.openai_model
 
-    def build_prompt(self, response: SurveyResponse) -> str:
-        return json.dumps(response.model_dump(), indent=2, sort_keys=True)
+    def build_prompt(
+        self,
+        response: SurveyResponse,
+        question_text: Dict[str, str] | None = None,
+    ) -> str:
+        parts = []
+        if question_text:
+            parts.append("Questions as shown to the respondent:")
+            for field, q in sorted(question_text.items()):
+                parts.append(f"  - {field}: {q}")
+            parts.append("")
+        parts.append("Survey response JSON:")
+        parts.append(json.dumps(response.model_dump(), indent=2, sort_keys=True))
+        return "\n".join(parts)
 
     def parse_llm_output(self, raw_text: str) -> Tuple[List[Issue], str]:
         """Parse raw JSON text returned by the LLM into issues and comment."""
@@ -110,7 +122,11 @@ class LLMSemanticValidator:
             )
         return issues, overall_comment
 
-    def validate(self, response: SurveyResponse) -> Tuple[List[Issue], str]:
+    def validate(
+        self,
+        response: SurveyResponse,
+        question_text: Dict[str, str] | None = None,
+    ) -> Tuple[List[Issue], str]:
         """Run the LLM-based semantic validation.
 
         Returns:
@@ -120,14 +136,14 @@ class LLMSemanticValidator:
             # Degraded mode: no LLM, but keep interface consistent
             return [], "LLM validation skipped (no API key configured)."
 
-        user_content = self.build_prompt(response)
+        user_content = self.build_prompt(response, question_text=question_text)
 
         try:
             completion = self.client.chat.completions.create(
                 model=self.model,
                 messages=[
                     {"role": "system", "content": SYSTEM_PROMPT},
-                    {"role": "user", "content": f"Survey response JSON:\n{user_content}"},
+                    {"role": "user", "content": user_content},
                 ],
                 response_format={"type": "json_object"},
             )

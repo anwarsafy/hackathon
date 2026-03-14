@@ -21,11 +21,14 @@ Example: `https://semantic-guardian-api.onrender.com` or `https://your-app.railw
 
 ## Endpoints
 
-| Method | Path             | Description                |
-|--------|------------------|----------------------------|
-| GET    | `/health`        | Health check               |
-| POST   | `/validate`      | Validate one response      |
-| POST   | `/batch-validate`| Validate many responses    |
+| Method | Path                    | Description                                      |
+|--------|-------------------------|--------------------------------------------------|
+| GET    | `/health`               | Health check                                    |
+| GET    | `/survey-types`         | List survey type ids and names                   |
+| GET    | `/survey-types/{id}`    | Get schema (questions, labels, question text)   |
+| POST   | `/validate`             | Validate one response (or with survey_type/question_text) |
+| POST   | `/batch-validate`       | Validate many responses (same body shapes)       |
+| POST   | `/validate-from-text`   | Extract from natural language, then validate     |
 
 ---
 
@@ -45,7 +48,19 @@ GET /health
 
 ---
 
-## 2. Validate single response
+## 2. Survey types
+
+**GET /survey-types**
+
+Returns: `[{ "survey_type": "labour_market", "name": "Labour Market Survey (Saudi context)" }, ...]`
+
+**GET /survey-types/{survey_type}**
+
+Returns full schema: `{ "survey_type": "...", "name": "...", "questions": [{ "id", "field", "label", "question_text", "value_type" }, ...] }`. 404 if not found.
+
+---
+
+## 3. Validate single response
 
 **Request**
 
@@ -54,7 +69,12 @@ POST /validate
 Content-Type: application/json
 ```
 
-**Body (all fields optional except at least one for validation):**
+**Body (two accepted shapes):**
+
+- **Simple (backward compatible):** a single object with response fields only (no `response` key).
+- **With context:** `{ "response": { ...same fields... }, "survey_type": "labour_market", "question_text": { "age": "What is your age?", "job_title": "..." } }`. Use `survey_type` to apply survey-specific thresholds; use `question_text` so the LLM can use question wording for smarter checks.
+
+Example (simple):
 
 ```json
 {
@@ -113,7 +133,7 @@ console.log(result.confidence_score, result.issues);
 
 ---
 
-## 3. Batch validate
+## 4. Batch validate
 
 **Request**
 
@@ -173,6 +193,18 @@ const res = await fetch(`${baseUrl}/batch-validate`, {
 });
 const results = await res.json();
 ```
+
+---
+
+## 5. Validate from natural language
+
+**POST /validate-from-text**
+
+**Body:** `{ "text": "I am 30, male, engineer, 5 years experience, married, 2 children, income 8000 SAR", "survey_type": "labour_market", "language_hint": "en" }`. `survey_type` and `language_hint` are optional.
+
+**Response:** `{ "extracted": SurveyResponse, "validation": ValidationResult, "parsing_issues": ["Could not determine ...", ...] }`
+
+Requires `OPENAI_API_KEY` for extraction.
 
 ---
 
