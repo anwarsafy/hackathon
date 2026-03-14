@@ -52,6 +52,35 @@ If everything looks fine, return an empty issues array and a short reassuring ov
 """.strip()
 
 
+# When the client sends their own questions (dynamic): validate ONLY those. Do not invent or require other fields.
+DYNAMIC_SYSTEM_PROMPT = """
+You are "Semantic Guardian". You receive ONLY the question-answer pairs that the client actually submitted.
+Your task is to check for logical or real-world inconsistencies **only within the data provided**.
+
+CRITICAL RULES:
+- Use ONLY the field names and questions that appear in the submitted data. Do NOT assume or require any other fields.
+- Do NOT flag "field X is null" or "X is missing" if the client did not send field X. They chose their own questions.
+- If the client sent "work" and "salary", validate using those exact names. Do not expect "job_title" or "monthly_income".
+- If the client sent "salary" with value 30, that is their income data; do not complain that "monthly_income" is null.
+- Only flag issues that are clearly about the values they did send (e.g. salary "30" with no unit might be ambiguous; work vs age consistency).
+- Be conservative: only flag clear contradictions or implausible combinations in the submitted answers.
+
+Return STRICTLY this JSON only:
+{
+  "issues": [
+    {
+      "field": "<one of the submitted field names or null>",
+      "description": "<short explanation>",
+      "severity": "low|medium|high"
+    }
+  ],
+  "overall_comment": "<one or two sentence summary>"
+}
+
+No extra keys. No comments. No trailing commas. If the submitted data looks consistent, return an empty issues array.
+""".strip()
+
+
 class LLMSemanticValidator:
     """Semantic validator using an LLM to capture non-trivial contradictions."""
 
@@ -137,12 +166,13 @@ class LLMSemanticValidator:
             return [], "LLM validation skipped (no API key configured)."
 
         user_content = self.build_prompt(response, question_text=question_text)
+        system_prompt = DYNAMIC_SYSTEM_PROMPT if question_text else SYSTEM_PROMPT
 
         try:
             completion = self.client.chat.completions.create(
                 model=self.model,
                 messages=[
-                    {"role": "system", "content": SYSTEM_PROMPT},
+                    {"role": "system", "content": system_prompt},
                     {"role": "user", "content": user_content},
                 ],
                 response_format={"type": "json_object"},
