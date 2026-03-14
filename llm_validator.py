@@ -68,7 +68,7 @@ class LLMSemanticValidator:
         self.model = settings.openai_model
 
     def build_prompt(self, response: SurveyResponse) -> str:
-        return json.dumps(response.dict(), indent=2, sort_keys=True)
+        return json.dumps(response.model_dump(), indent=2, sort_keys=True)
 
     def parse_llm_output(self, raw_text: str) -> Tuple[List[Issue], str]:
         """Parse raw JSON text returned by the LLM into issues and comment."""
@@ -123,22 +123,16 @@ class LLMSemanticValidator:
         user_content = self.build_prompt(response)
 
         try:
-            completion = self.client.responses.create(
+            completion = self.client.chat.completions.create(
                 model=self.model,
-                input=[
-                    {
-                        "role": "system",
-                        "content": SYSTEM_PROMPT,
-                    },
-                    {
-                        "role": "user",
-                        "content": f"Survey response JSON:\n{user_content}",
-                    },
+                messages=[
+                    {"role": "system", "content": SYSTEM_PROMPT},
+                    {"role": "user", "content": f"Survey response JSON:\n{user_content}"},
                 ],
                 response_format={"type": "json_object"},
             )
 
-            raw_text = completion.output[0].content[0].text
+            raw_text = completion.choices[0].message.content or "{}"
             issues, overall_comment = self.parse_llm_output(raw_text)
             return issues, overall_comment or "LLM semantic validation completed."
         except Exception as exc:  # noqa: BLE001
