@@ -1,0 +1,15 @@
+# Render Blueprint — نشر الباكند مجاناً بنقرة واحدة
+# بعد الـ push: ادخل render.com → New → Blueprint → وصّل الريبو
+# راجع: https://docs.render.com/blueprint-spec
+
+services:
+  - type: web
+    runtime: docker
+    name: semantic-guardian-api
+    region: oregon
+    healthCheckPath: /health
+    envVars:
+      - key: OPENAI_API_KEY
+        sync: false
+      - key: OPENAI_MODEL
+        value: gpt-4.1-mini
