@@ -111,3 +111,18 @@ class ValidateFromTextResponse(BaseModel):
     validation: ValidationResult
     parsing_issues: List[str] = Field(default_factory=list)
 
+
+# --- Dynamic: any questions from frontend ---
+
+
+class DynamicItem(BaseModel):
+    """One question-answer pair (any field name)."""
+    field: str
+    question: str = Field(..., description="Question text shown to respondent")
+    value: Any = None  # number, string, or null
+
+
+class ValidateDynamicRequest(BaseModel):
+    """Validate using any list of question-answer pairs. Works with all questions the frontend sends."""
+    items: List[DynamicItem] = Field(..., description="List of field, question text, and value")
+

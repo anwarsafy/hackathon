@@ -6,8 +6,10 @@ from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 
 from models import (
+    DynamicItem,
     SurveyResponse,
     SurveySchema,
+    ValidateDynamicRequest,
     ValidateFromTextRequest,
     ValidateFromTextResponse,
     ValidateRequest,
@@ -54,6 +56,45 @@ def survey_type_schema(survey_type: str) -> SurveySchema:
     return schema
 
 
+# Known SurveyResponse fields for dynamic mapping
+_KNOWN_FIELDS = {"age", "gender", "education", "job_title", "years_experience", "marital_status", "children", "monthly_income"}
+_NUMERIC_INT = {"age", "children"}
+_NUMERIC_FLOAT = {"years_experience", "monthly_income"}
+
+
+def _dynamic_items_to_response_and_questions(
+    items: list[DynamicItem],
+) -> tuple[SurveyResponse, dict[str, str]]:
+    """Convert dynamic question-answer items to SurveyResponse + question_text. Works with any questions."""
+    response_dict: dict[str, Any] = {}
+    extras: dict[str, Any] = {}
+    question_text: dict[str, str] = {}
+
+    for item in items:
+        question_text[item.field] = item.question
+        v = item.value
+        if v is None or (isinstance(v, str) and v.strip() == ""):
+            continue
+        if item.field in _NUMERIC_INT:
+            try:
+                response_dict[item.field] = int(v) if not isinstance(v, int) else v
+            except (TypeError, ValueError):
+                response_dict[item.field] = v
+        elif item.field in _NUMERIC_FLOAT:
+            try:
+                response_dict[item.field] = float(v) if not isinstance(v, (int, float)) else v
+            except (TypeError, ValueError):
+                response_dict[item.field] = v
+        elif item.field in _KNOWN_FIELDS:
+            response_dict[item.field] = v if isinstance(v, str) else str(v)
+        else:
+            extras[item.field] = v
+
+    if extras:
+        response_dict["extras"] = extras
+    return SurveyResponse(**response_dict), question_text
+
+
 def _parse_validate_body(body: dict[str, Any]) -> tuple[SurveyResponse, str | None, dict[str, str] | None]:
     """Parse body as either ValidateRequest (has 'response') or plain SurveyResponse. Returns (response, survey_type, question_text)."""
     if "response" in body and body.get("response") is not None:
@@ -90,6 +131,22 @@ async def batch_validate(request: Request) -> List[ValidationResult]:
             )
         )
     return results
+
+
+@app.post("/validate-dynamic", response_model=ValidationResult)
+async def validate_dynamic(req: ValidateDynamicRequest) -> ValidationResult:
+    """
+    Validate using any list of question-answer pairs. Frontend can send whatever questions they have;
+    each item is { "field": "...", "question": "Question text?", "value": ... }. Works with all questions.
+    """
+    if not req.items:
+        return validator_service.validate(SurveyResponse())
+    response, question_text = _dynamic_items_to_response_and_questions(req.items)
+    return validator_service.validate(
+        response,
+        survey_type=None,
+        question_text=question_text,
+    )
 
 
 @app.post("/validate-from-text", response_model=ValidateFromTextResponse)

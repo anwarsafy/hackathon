@@ -28,6 +28,7 @@ Example: `https://semantic-guardian-api.onrender.com` or `https://your-app.railw
 | GET    | `/survey-types/{id}`    | Get schema (questions, labels, question text)   |
 | POST   | `/validate`             | Validate one response (or with survey_type/question_text) |
 | POST   | `/batch-validate`       | Validate many responses (same body shapes)       |
+| POST   | `/validate-dynamic`     | Validate **any** questions: send `{ "items": [ { "field", "question", "value" }, ... ] }` |
 | POST   | `/validate-from-text`   | Extract from natural language, then validate     |
 
 ---
@@ -196,7 +197,50 @@ const results = await res.json();
 
 ---
 
-## 5. Validate from natural language
+## 5. Validate dynamic (any questions)
+
+**POST /validate-dynamic**
+
+Use this when your frontend has **any** questions: send a list of question-answer pairs. The API works with **all questions** you send; no fixed schema required.
+
+**Body:**
+
+```json
+{
+  "items": [
+    { "field": "age", "question": "What is your age in years?", "value": 30 },
+    { "field": "job_title", "question": "Your current job title?", "value": "Engineer" },
+    { "field": "monthly_income", "question": "Monthly income (SAR)?", "value": 8000 },
+    { "field": "custom_question", "question": "Any custom question?", "value": "Answer" }
+  ]
+}
+```
+
+- **field:** unique key (e.g. `age`, `job_title`, or any custom name).
+- **question:** exact question text shown to the respondent (used for smarter LLM validation).
+- **value:** answer (number, string, or null).
+
+**Response:** Same as `POST /validate` — `ValidationResult` with `confidence_score`, `status`, `issues`.
+
+**JavaScript example:**
+
+```js
+const res = await fetch(`${baseUrl}/validate-dynamic`, {
+  method: 'POST',
+  headers: { 'Content-Type': 'application/json' },
+  body: JSON.stringify({
+    items: [
+      { field: 'age', question: 'What is your age?', value: 25 },
+      { field: 'job_title', question: 'Your job?', value: 'Developer' },
+    ],
+  }),
+});
+const result = await res.json();
+```
+
+---
+
+## 6. Validate from natural language
 
 **POST /validate-from-text**
 
@@ -208,7 +252,7 @@ Requires `OPENAI_API_KEY` for extraction.
 
 ---
 
-## Response types
+## 7. Response types
 
 - **confidence_score:** `0–100` (higher = better quality).
 - **status:** e.g. `"high reliability"`, `"suspicious"`, `"inconsistent"`.

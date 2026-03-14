@@ -1,15 +1,51 @@
 from __future__ import annotations
 
+import json
 from pathlib import Path
-from typing import List
+from typing import Any, List
 
 import pandas as pd
 import streamlit as st
 
-from models import SurveyResponse
+from models import DynamicItem, SurveyResponse
 from nl_extractor import extract_response
-from survey_schemas import list_survey_types
 from validator_service import HybridValidatorService
+
+
+_KNOWN = {"age", "gender", "education", "job_title", "years_experience", "marital_status", "children", "monthly_income"}
+_INT_FIELDS = {"age", "children"}
+_FLOAT_FIELDS = {"years_experience", "monthly_income"}
+
+
+def _dynamic_to_response_and_questions(
+    items: List[DynamicItem],
+) -> tuple[SurveyResponse, dict[str, str]]:
+    """Build SurveyResponse + question_text from dynamic items (any questions)."""
+    response_dict: dict[str, Any] = {}
+    extras: dict[str, Any] = {}
+    question_text: dict[str, str] = {}
+    for item in items:
+        question_text[item.field] = item.question
+        v = item.value
+        if v is None or (isinstance(v, str) and v.strip() == ""):
+            continue
+        if item.field in _INT_FIELDS:
+            try:
+                response_dict[item.field] = int(v) if not isinstance(v, int) else v
+            except (TypeError, ValueError):
+                response_dict[item.field] = v
+        elif item.field in _FLOAT_FIELDS:
+            try:
+                response_dict[item.field] = float(v) if not isinstance(v, (int, float)) else v
+            except (TypeError, ValueError):
+                response_dict[item.field] = v
+        elif item.field in _KNOWN:
+            response_dict[item.field] = v if isinstance(v, str) else str(v)
+        else:
+            extras[item.field] = v
+    if extras:
+        response_dict["extras"] = extras
+    return SurveyResponse(**response_dict), question_text
 
 
 @st.cache_data
@@ -43,23 +79,14 @@ def main() -> None:
     service = HybridValidatorService()
     samples = load_samples()
 
-    # Survey type: optional, for threshold and context
-    survey_types_list = list_survey_types()
-    survey_type_options = [t("(default)", "(افتراضي)")] + [s["name"] for s in survey_types_list]
-    survey_type_ids = [None] + [s["survey_type"] for s in survey_types_list]
-    survey_type_idx = st.sidebar.selectbox(
-        t("Survey type", "نوع الاستبيان"),
-        range(len(survey_type_options)),
-        format_func=lambda i: survey_type_options[i],
-    )
-    selected_survey_type = survey_type_ids[survey_type_idx]
-
+    # All-in-one: single flow, no survey type selector
     mode = st.sidebar.radio(
         t("Input mode", "وضع الإدخال"),
         options=[
             t("Manual entry", "إدخال يدوي"),
             t("Use sample record", "استخدام سجل تجريبي"),
             t("Natural language", "نص حر"),
+            t("Dynamic (any questions)", "ديناميكي (أي أسئلة)"),
         ],
     )
 
@@ -78,14 +105,10 @@ def main() -> None:
             else:
                 extracted, parsing_issues = extract_response(
                     nl_text.strip(),
-                    survey_type=selected_survey_type,
+                    survey_type=None,
                     language_hint=lang if lang == "English" else "ar",
                 )
-                result = service.validate(
-                    extracted,
-                    survey_type=selected_survey_type,
-                    question_text=None,
-                )
+                result = service.validate(extracted, survey_type=None, question_text=None)
                 st.subheader(t("Extracted response", "الاستجابة المستخرجة"))
                 st.json(extracted.model_dump())
                 if parsing_issues:
@@ -108,6 +131,43 @@ def main() -> None:
                     st.success(t("No issues detected.", "لا توجد مشكلات."))
                 with st.expander(t("Raw validation JSON", "استجابة التحقق الخام")):
                     st.json(result.model_dump())
+        st.stop()
+
+    if mode == t("Dynamic (any questions)", "ديناميكي (أي أسئلة)"):
+        st.subheader(t("Dynamic: any questions from your form", "ديناميكي: أي أسئلة من النموذج"))
+        st.markdown(
+            t(
+                "Paste a JSON array of `{ \"field\", \"question\", \"value\" }`. Works with **all questions** your frontend sends.",
+                "الصق مصفوفة JSON من `{ \"field\", \"question\", \"value\" }`. يعمل مع **جميع الأسئلة** التي يرسلها الواجهة.",
+            )
+        )
+        dynamic_json = st.text_area(
+            t("JSON array of items", "مصفوفة JSON للعناصر"),
+            value='[\n  {"field": "age", "question": "What is your age?", "value": 30},\n  {"field": "job_title", "question": "Your job?", "value": "Engineer"},\n  {"field": "monthly_income", "question": "Monthly income (SAR)?", "value": 8000}\n]',
+            height=220,
+        )
+        if st.button(t("Validate dynamic", "تحقق ديناميكي")):
+            try:
+                raw = json.loads(dynamic_json)
+                if not isinstance(raw, list):
+                    st.error(t("Must be a JSON array.", "يجب أن تكون مصفوفة JSON."))
+                else:
+                    items = [DynamicItem(**x) for x in raw]
+                    response, question_text = _dynamic_to_response_and_questions(items)
+                    result = service.validate(response, survey_type=None, question_text=question_text)
+                    st.subheader(t("Data quality score", "درجة جودة البيانات"))
+                    st.metric(t("Confidence score (0–100)", "درجة الثقة (0–100)"), result.confidence_score)
+                    st.write(t("**Status:** ", "**الحالة:** ") + result.status)
+                    if result.issues:
+                        st.table([{"field": i.field, "description": i.description, "severity": i.severity.value} for i in result.issues])
+                    else:
+                        st.success(t("No issues detected.", "لا توجد مشكلات."))
+                    with st.expander(t("Raw JSON", "JSON الخام")):
+                        st.json(result.model_dump())
+            except json.JSONDecodeError as e:
+                st.error(t("Invalid JSON: ", "JSON غير صالح: ") + str(e))
+            except Exception as e:
+                st.error(str(e))
         st.stop()
 
     if mode == t("Use sample record", "استخدام سجل تجريبي"):
@@ -194,11 +254,7 @@ def main() -> None:
             monthly_income=float(monthly_income),
         )
 
-        result = service.validate(
-            response,
-            survey_type=selected_survey_type,
-            question_text=None,
-        )
+        result = service.validate(response, survey_type=None, question_text=None)
 
         st.subheader(t("Data quality score", "درجة جودة البيانات"))
         st.metric(
